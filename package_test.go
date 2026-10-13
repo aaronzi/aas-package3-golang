@@ -2247,6 +2247,83 @@ func TestFindPartWithURIDelimitersInEntryName(t *testing.T) {
 	}
 }
 
+func TestPartNamesDifferingInNonASCIICaseAreDistinct(t *testing.T) {
+	data := packageWithSupplementary(t, "aasx/suppl/%C3%84.pdf", "/aasx/suppl/%C3%84.pdf")
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("Failed to read ZIP: %v", err)
+	}
+	var output bytes.Buffer
+	writer := zip.NewWriter(&output)
+	for _, file := range reader.File {
+		if err := writer.Copy(file); err != nil {
+			t.Fatalf("Failed to copy %s: %v", file.Name, err)
+		}
+	}
+	entry, err := writer.Create("aasx/suppl/%C3%A4.pdf")
+	if err != nil {
+		t.Fatalf("Failed to create entry: %v", err)
+	}
+	if _, err := entry.Write([]byte("%PDF")); err != nil {
+		t.Fatalf("Failed to write entry: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Failed to close ZIP: %v", err)
+	}
+
+	pkg, err := NewPackaging().OpenReadFromReaderAt(bytes.NewReader(output.Bytes()), int64(output.Len()))
+	if err != nil {
+		t.Fatalf("Failed to open package: %v", err)
+	}
+	defer pkg.Close()
+
+	upper, err := pkg.FindPart(&url.URL{Path: "/aasx/suppl/Ä.pdf"})
+	if err != nil || upper == nil || upper.URI.String() != "/aasx/suppl/%C3%84.pdf" {
+		t.Errorf("Expected to find /aasx/suppl/%%C3%%84.pdf, got %v: %v", upper, err)
+	}
+	lower, err := pkg.FindPart(&url.URL{Path: "/aasx/suppl/ä.pdf"})
+	if err != nil || lower == nil || lower.URI.String() != "/aasx/suppl/%C3%A4.pdf" {
+		t.Errorf("Expected to find /aasx/suppl/%%C3%%A4.pdf, got %v: %v", lower, err)
+	}
+}
+
+func TestFlushKeepsEntryNamesWithBackslashes(t *testing.T) {
+	tmpdir, cleanup := temporaryDirectory(t)
+	defer cleanup()
+
+	entryName := `aasx\suppl\Doc.pdf`
+	pth := filepath.Join(tmpdir, "dummy.aasx")
+	if err := os.WriteFile(pth, packageWithSupplementary(t, entryName, "/aasx/suppl/Doc.pdf"), 0644); err != nil {
+		t.Fatalf("Failed to write package: %v", err)
+	}
+
+	packaging := NewPackaging()
+	pkg, err := packaging.OpenReadWrite(pth)
+	if err != nil {
+		t.Fatalf("Failed to open package: %v", err)
+	}
+	if err := pkg.Flush(); err != nil {
+		t.Fatalf("Failed to flush: %v", err)
+	}
+	if err := pkg.Close(); err != nil {
+		t.Fatalf("Failed to close: %v", err)
+	}
+
+	if names := zipEntryNames(t, pth); !names[entryName] {
+		t.Errorf("Expected the round trip to keep entry %q, got %v", entryName, names)
+	}
+
+	reopened, err := packaging.OpenRead(pth)
+	if err != nil {
+		t.Fatalf("Failed to reopen package: %v", err)
+	}
+	defer reopened.Close()
+	rels, err := reopened.SupplementaryRelationships()
+	if err != nil || len(rels) != 1 {
+		t.Errorf("Expected one supplementary relationship after round trip, got %d: %v", len(rels), err)
+	}
+}
+
 func TestWritePartsWithSpaceInName(t *testing.T) {
 	tmpdir, cleanup := temporaryDirectory(t)
 	defer cleanup()

@@ -822,7 +822,7 @@ func (p *Packaging) openPackage(
 			URI:         partURIFromEntryName(partPath),
 			ContentType: contentType,
 			pkg:         pkg,
-			entryName:   strings.TrimPrefix(partPath, "/"),
+			entryName:   strings.TrimPrefix(file.Name, "/"),
 		}
 		if lazy {
 			part.archiveFile = file
@@ -2099,9 +2099,10 @@ func normalizeURI(uri *url.URL) string {
 
 // normalizePathForMap normalizes a path for use as a map key.
 //
-// Part names are compared case-insensitively and independent of their
-// percent-encoding (ISO/IEC 29500-2), so "/a b.pdf", "/a%20b.pdf" and
-// "/A%20B.pdf" all map to the same key.
+// Part names are compared as case-insensitive ASCII strings and independent
+// of their percent-encoding (ISO/IEC 29500-2), so "/a b.pdf", "/a%20b.pdf"
+// and "/A%20B.pdf" all map to the same key while "/%C3%84" and "/%C3%A4" do
+// not.
 func normalizePathForMap(path string) string {
 	segments := strings.Split(strings.ReplaceAll(path, "\\", "/"), "/")
 	for i, segment := range segments {
@@ -2110,17 +2111,19 @@ func normalizePathForMap(path string) string {
 	return normalizePathForURI(strings.Join(segments, "/"))
 }
 
-// canonicalizePathSegment decodes a path segment, lowercases it and encodes it
-// again. Malformed percent-encodings are kept literally.
+// canonicalizePathSegment decodes a path segment, lowercases its ASCII letters
+// and encodes it again. Malformed percent-encodings are kept literally.
 func canonicalizePathSegment(segment string) string {
 	if decoded, err := url.PathUnescape(segment); err == nil {
 		segment = decoded
 	}
-	segment = strings.ToLower(segment)
 
 	var builder strings.Builder
 	for i := 0; i < len(segment); i++ {
 		c := segment[i]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
 		if isPathSegmentCharacter(c) {
 			builder.WriteByte(c)
 		} else {
