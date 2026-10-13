@@ -845,6 +845,7 @@ func TestPackageReadOperationsAfterClose(t *testing.T) {
 		func() error { _, operationErr := pkg.IsSpec(specs[0]); return operationErr },
 		func() error { _, operationErr := pkg.SupplementariesFor(specs[0]); return operationErr },
 		func() error { _, operationErr := pkg.SupplementaryRelationships(); return operationErr },
+		func() error { _, operationErr := pkg.Parts(); return operationErr },
 		func() error { _, operationErr := pkg.FindPart(specs[0].URI); return operationErr },
 		func() error { _, operationErr := pkg.MustPart(specs[0].URI); return operationErr },
 		func() error { _, operationErr := pkg.Thumbnail(); return operationErr },
@@ -2015,6 +2016,84 @@ func TestFindPart(t *testing.T) {
 		if part != nil {
 			t.Error("Expected nil for non-existent part")
 		}
+	}
+}
+
+func TestParts(t *testing.T) {
+	tmpdir, cleanup := temporaryDirectory(t)
+	defer cleanup()
+
+	pth := filepath.Join(tmpdir, "dummy.aasx")
+	packaging := NewPackaging()
+
+	// Create package with a spec and a part no relationship targets
+	{
+		pkg, err := packaging.Create(pth)
+		if err != nil {
+			t.Fatalf("Failed to create package: %v", err)
+		}
+
+		spec, err := pkg.PutPart(mustParseURL("/aasx/data.xml"), "application/xml", []byte("<aas/>"))
+		if err != nil {
+			t.Fatalf("Failed to put spec: %v", err)
+		}
+		if err := pkg.MakeSpec(spec); err != nil {
+			t.Fatalf("Failed to make spec: %v", err)
+		}
+		if _, err := pkg.PutPart(
+			mustParseURL("/aasx/suppl/orphan.pdf"), "application/pdf", []byte("%PDF")); err != nil {
+			t.Fatalf("Failed to put orphan: %v", err)
+		}
+		if err := pkg.Flush(); err != nil {
+			t.Fatalf("Failed to flush: %v", err)
+		}
+		if err := pkg.Close(); err != nil {
+			t.Fatalf("Failed to close: %v", err)
+		}
+	}
+
+	pkg, err := packaging.OpenReadWrite(pth)
+	if err != nil {
+		t.Fatalf("Failed to open package: %v", err)
+	}
+	defer pkg.Close()
+
+	rels, err := pkg.SupplementaryRelationships()
+	if err != nil || len(rels) != 0 {
+		t.Fatalf("Expected no supplementary relationships, got %d: %v", len(rels), err)
+	}
+
+	partURIs := func() []string {
+		t.Helper()
+		parts, err := pkg.Parts()
+		if err != nil {
+			t.Fatalf("Failed to list parts: %v", err)
+		}
+		result := make([]string, 0, len(parts))
+		for _, part := range parts {
+			result = append(result, part.URI.String()+" "+part.ContentType)
+		}
+		return result
+	}
+
+	expected := []string{
+		"/aasx/aasx-origin text/plain",
+		"/aasx/data.xml application/xml",
+		"/aasx/suppl/orphan.pdf application/pdf",
+	}
+	if got := partURIs(); strings.Join(got, "\n") != strings.Join(expected, "\n") {
+		t.Fatalf("Expected parts %v, got %v", expected, got)
+	}
+
+	orphan, err := pkg.MustPart(mustParseURL("/aasx/suppl/orphan.pdf"))
+	if err != nil {
+		t.Fatalf("Failed to get orphan: %v", err)
+	}
+	if err := pkg.DeletePart(orphan); err != nil {
+		t.Fatalf("Failed to delete orphan: %v", err)
+	}
+	if got := partURIs(); strings.Join(got, "\n") != strings.Join(expected[:2], "\n") {
+		t.Fatalf("Expected parts %v after delete, got %v", expected[:2], got)
 	}
 }
 

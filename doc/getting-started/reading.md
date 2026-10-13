@@ -187,6 +187,20 @@ for _, rel := range relationships {
 }
 ```
 
+Relationships only reach the parts a producer related to a spec.
+To see everything the package contains, including parts no relationship targets, list all parts:
+
+```go
+parts, err := pkg.Parts()
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, part := range parts {
+    fmt.Printf("%s (%s)\n", part.URI, part.ContentType)
+}
+```
+
 ## Thumbnail
 
 Here is how to query for a thumbnail of the package:

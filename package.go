@@ -1089,6 +1089,29 @@ func (p *PackageRead) SupplementaryRelationships() ([]*SupplementaryRelationship
 	return result, nil
 }
 
+// Parts returns all parts of the package sorted by URI, including parts that
+// no relationship targets. OPC metadata such as relationship parts and
+// [Content_Types].xml is not included.
+func (p *PackageRead) Parts() ([]*Part, error) {
+	base, err := p.lockBaseForRead()
+	if err != nil {
+		return nil, err
+	}
+	defer base.mu.RUnlock()
+
+	result := make([]*Part, 0, len(base.parts))
+	for _, part := range base.parts {
+		result = append(result, part)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].URI.String() < result[j].URI.String()
+	})
+
+	Ensure(len(result) == len(base.parts), "Every part must be listed exactly once.")
+
+	return result, nil
+}
+
 // FindPart tries to find the package part with the given URI.
 // Returns nil if the part does not exist.
 func (p *PackageRead) FindPart(uri *url.URL) (*Part, error) {

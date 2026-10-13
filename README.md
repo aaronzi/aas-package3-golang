@@ -144,6 +144,7 @@ go get github.com/aas-core-works/aas-package3-golang/v2
 | `IsSpec(part)` | Check if a part is a spec |
 | `SupplementariesFor(spec)` | List supplementary parts for a spec |
 | `SupplementaryRelationships()` | List all supplementary relationships |
+| `Parts()` | List all parts in the package, including parts no relationship targets |
 | `FindPart(uri)` | Find a part by URI (returns nil if not found) |
 | `MustPart(uri)` | Get a part by URI (returns error if not found) |
 | `Thumbnail()` | Get the package thumbnail |
